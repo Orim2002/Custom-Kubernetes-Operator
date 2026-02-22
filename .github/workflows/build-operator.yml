@@ -43,6 +43,7 @@ jobs:
           sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }}|g" operator-deploy.yaml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin master
           git add operator-deploy.yaml
           git commit -m "chore: update operator image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
           git push origin master

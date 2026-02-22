@@ -37,6 +37,15 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }}
+      
+      - name: Update operator-deploy.yaml to latest version
+        run: |
+          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }}|g" operator-deploy.yaml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add operator-deploy.yaml
+          git commit -m "chore: update operator image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
+          git push origin master
 
   deploy-to-cluster:
     needs: build-and-publish

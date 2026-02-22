@@ -10,11 +10,11 @@ except config.ConfigException:
     config.load_incluster_config()
 
 
-def create_deployment(deployment_name, image, image_tag, namespace):
+def create_deployment(deployment_name, image, tag, namespace):
     apps_v1 = client.AppsV1Api()
     container = client.V1Container(
         name="app",
-        image=f"{image}:{image_tag}",
+        image=f"{image}:{tag}",
         ports=[client.V1ContainerPort(container_port=80)]
     )
 
@@ -112,14 +112,14 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
 def create_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
     image = spec.get("image")
-    image_tag = spec.get('image_tag')
+    tag = spec.get('image_tag')
 
     deployment_name = f"pr-{pr_number}-app"
     service_name = f"pr-{pr_number}-svc"
     ingress_name = f"pr-{pr_number}-ingress"
     ingress_host = f"pr-{pr_number}.preview.orima.com"
 
-    create_deployment(deployment_name, image, image_tag, namespace)
+    create_deployment(deployment_name, image, tag, namespace)
     create_service(service_name, deployment_name, namespace)
     create_ingress(ingress_name, ingress_host, service_name, namespace)
     

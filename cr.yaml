@@ -1,0 +1,8 @@
+apiVersion: devops.orima.com/v1
+kind: PreviewEnvironment
+metadata:
+  name: pr-123-env
+spec:
+  pr_number: 123
+  image: "nginx"
+  image_tag: "latest"

@@ -12,10 +12,26 @@ except config.ConfigException:
 
 def create_deployment(deployment_name, image, tag, namespace):
     apps_v1 = client.AppsV1Api()
+    resources = client.V1ResourceRequirements(
+        requests={"cpu": "100m", "memory": "128Mi"},
+        limits={"cpu": "250m", "memory": "256Mi"},
+    )
+
+    health_probe = client.V1Probe(
+        http_get=client.V1HTTPGetAction(path="/", port=80),
+        initial_delay_seconds=2,
+        period_seconds=5,
+        timeout_seconds=2,
+        failure_threshold=3
+    )
+
     container = client.V1Container(
         name="app",
         image=f"{image}:{tag}",
-        ports=[client.V1ContainerPort(container_port=80)]
+        ports=[client.V1ContainerPort(container_port=80)],
+        resources=resources,
+        liveness_probe=health_probe,
+        readiness_probe=health_probe
     )
 
     template = client.V1PodTemplateSpec(

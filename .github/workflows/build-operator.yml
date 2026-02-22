@@ -36,3 +36,16 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }}
+
+  deploy-to-cluster:
+    needs: build-and-publish
+    runs-on: self-hosted
+    steps:
+      - name: Update Operator Image in Kubernetes
+        run: |
+          echo "Deploying new Operator version to the cluster..."
+          kubectl set image deployment/custom-operator \
+            operator=${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }} \
+            -n default
+          kubectl rollout status deployment/custom-operator -n default
+          echo "Operator successfully updated to version ${{ github.sha }}!"

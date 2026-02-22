@@ -1,7 +1,9 @@
 name: Build and Push Operator Image
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
       - master
     paths:
@@ -10,6 +12,7 @@ on:
 
 jobs:
   build-and-publish:
+    if: github.event.pull_request.merged == true && github.head_ref == 'dev'
     runs-on: ubuntu-latest
 
     steps:

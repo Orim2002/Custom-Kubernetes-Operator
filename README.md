@@ -29,3 +29,43 @@ This Operator solves both problems by extending the Kubernetes API with a `Previ
 Create a local cluster:
 ```bash
 kind create cluster --name operator-dev
+```
+
+### 3. Build and load the operator
+Build the Docker image and load it directly into the `kind` cluster:
+```bash
+docker build -t custom-operator:v1 .
+kind load docker-image custom-operator:v1 --name operator-dev
+```
+
+### 4. Deploy the operator
+Apply the CRD and the Operator manifests (RBAC + Deployment):
+```bash
+kubectl apply -f crd.yaml
+kubectl apply -f operator-deploy.yaml
+```
+Verify the Operator is running:
+```bash
+kubectl get pods -l app=custom-operator
+```
+
+### 5. Create all the CR objects
+Create all the CR objects based on `cr.yaml`
+```bash
+kubectl apply -f cr.yaml
+kubectl get pods,svc
+```
+
+## Architecture
+
+### 1. Event
+CI/CD pipeline creates a `PreviewEnvironment` object in the cluster when a PR is opened.
+
+### 2. Watch
+The Custom Operator detects the `create` event via the Kubernetes API.
+
+### 3. Reconcile
+The Operator dynamically generates a `Deployment` and a `ClusterIP Service`, injecting OwnerReferences.
+
+### 4. Destroy
+When PR is merged/closed, the CI pipeline deletes the `PreviewEnvironment` object, triggering native Kubernetes cascade deletion.

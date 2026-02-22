@@ -1,0 +1,7 @@
+apiVersion: devops.orima.com/v1
+kind: PreviewEnvironment
+metadata:
+  name: pr-123-env
+spec:
+  pr_number: 123
+  image_tag: "latest"

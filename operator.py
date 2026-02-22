@@ -2,23 +2,19 @@ import kopf
 import logging
 from kubernetes import client, config
 
+logger = logging.getLogger(__name__)
+
 try:
     config.load_kube_config()
 except config.ConfigException:
     config.load_incluster_config()
 
-@kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
-def create_fn(spec, name, namespace, logger, **kwargs):
-    pr_number = spec.get('pr_number')
-    image_tag = spec.get('image_tag')
 
+def create_deployment(deployment_name, image, image_tag, namespace):
     apps_v1 = client.AppsV1Api()
-    deployment_name = f"pr-{pr_number}-app"
-    service_name = f"pr-{pr_number}-svc"
-
     container = client.V1Container(
         name="app",
-        image=f"nginx:{image_tag}",
+        image=f"{image}:{image_tag}",
         ports=[client.V1ContainerPort(container_port=80)]
     )
 
@@ -49,6 +45,7 @@ def create_fn(spec, name, namespace, logger, **kwargs):
         logger.error(f"Failed to create deployment: {e}")
         raise e
     
+def create_service(service_name, deployment_name, namespace):
     core_v1 = client.CoreV1Api()
     
     service_spec = client.V1ServiceSpec(
@@ -72,5 +69,65 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     except client.exceptions.ApiException as e:
         logger.error(f"Failed to create service: {e}")
         raise e
+
+def create_ingress(ingress_name, ingress_host, service_name, namespace):
+    networking_v1 = client.NetworkingV1Api()
+    networking_v1 = client.NetworkingV1Api()
+    ingress_spec = client.V1IngressSpec(
+        rules=[
+            client.V1IngressRule(
+                host=ingress_host,
+                http=client.V1HTTPIngressRuleValue(
+                    paths=[
+                        client.V1HTTPIngressPath(
+                            path="/",
+                            path_type="Prefix",
+                            backend=client.V1IngressBackend(
+                                service=client.V1IngressServiceBackend(
+                                    name=service_name,
+                                    port=client.V1ServiceBackendPort(number=80)
+                                )
+                            )
+                        )
+                    ]
+                )
+            )
+        ]
+    )
+    ingress = client.V1Ingress(
+        api_version="networking.k8s.io/v1",
+        kind="Ingress",
+        metadata=client.V1ObjectMeta(name=ingress_name),
+        spec=ingress_spec
+    )
+    kopf.adopt(ingress)
+    try:
+        networking_v1.create_namespaced_ingress(namespace=namespace, body=ingress)
+        logger.info(f"Successfully created Ingress: {ingress_name} for {ingress_host}")
+    except client.exceptions.ApiException as e:
+        logger.error(f"Failed to create ingress: {e}")
+        raise e
+
+@kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
+def create_fn(spec, name, namespace, logger, **kwargs):
+    pr_number = spec.get('pr_number')
+    image_tag = spec.get('image_tag')
+
+    deployment_name = f"pr-{pr_number}-app"
+    service_name = f"pr-{pr_number}-svc"
+    ingress_name = f"pr-{pr_number}-ingress"
+    ingress_host = f"pr-{pr_number}.preview.orima.com"
+
+    create_deployment(deployment_name, "nginx", image_tag, namespace)
+    create_service(service_name, deployment_name, namespace)
+    create_ingress(ingress_name, ingress_host, service_name, namespace)
     
-    return {'status': 'Environment Created', 'deployment': deployment_name, 'service': service_name}
+
+    
+    return {
+        'status': 'Environment Created', 
+        'deployment': deployment_name, 
+        'service': service_name,
+        'ingress': ingress_name,
+        'url': f"http://{ingress_host}"
+    }

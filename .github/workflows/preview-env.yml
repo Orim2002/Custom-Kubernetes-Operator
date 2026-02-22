@@ -1,0 +1,52 @@
+name: Dynamic Preview Environments
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+
+jobs:
+  deploy-preview:
+    if: github.event.action == 'opened' || github.event.action == 'synchronize'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build and Push Docker Image
+        run: |
+          docker build -t my-registry.com/my-app:${{ github.sha }} .
+          docker push my-registry.com/my-app:${{ github.sha }}
+
+      - name: Configure Kubernetes Credentials
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Generate and Apply Custom Resource
+        run: |
+          cat <<EOF | kubectl apply -f -
+          apiVersion: devops.orima.com/v1
+          kind: PreviewEnvironment
+          metadata:
+            name: pr-${{ github.event.pull_request.number }}-env
+            namespace: default
+          spec:
+            pr_number: ${{ github.event.pull_request.number }}
+            branch_name: "${{ github.head_ref }}"
+            image_tag: "${{ github.sha }}"
+          EOF
+
+
+  teardown-preview:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure Kubernetes Credentials
+        uses: azure/k8s-set-context@v3
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBECONFIG }}
+
+      - name: Delete Custom Resource
+        run: |
+          kubectl delete previewenvironment pr-${{ github.event.pull_request.number }}-env --ignore-not-found

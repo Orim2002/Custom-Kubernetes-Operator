@@ -9,6 +9,7 @@ on:
     paths:
       - "operator.py"
       - "Dockerfile"
+      - .github/workflows/build-operator.yml
 
 jobs:
   build-and-publish:

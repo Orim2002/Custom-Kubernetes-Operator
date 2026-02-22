@@ -26,6 +26,9 @@ rules:
   - apiGroups: ["kopf.dev"]
     resources: ["clusterkopfpeerings", "kopfpeerings"]
     verbs: ["*"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["*"]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1
@@ -60,7 +63,7 @@ spec:
       serviceAccountName: operator-sa
       containers:
         - name: operator
-          image: custom-operator:v1
+          image: custom-operator:v5
           imagePullPolicy: Never
           resources:
             requests:

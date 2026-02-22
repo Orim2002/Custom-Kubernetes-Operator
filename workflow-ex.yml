@@ -36,7 +36,6 @@ jobs:
             image_tag: "${{ github.sha }}"
           EOF
 
-
   teardown-preview:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest

@@ -111,6 +111,7 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
 @kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
 def create_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
+    image = spec.get("image")
     image_tag = spec.get('image_tag')
 
     deployment_name = f"pr-{pr_number}-app"
@@ -118,7 +119,7 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     ingress_name = f"pr-{pr_number}-ingress"
     ingress_host = f"pr-{pr_number}.preview.orima.com"
 
-    create_deployment(deployment_name, "nginx", image_tag, namespace)
+    create_deployment(deployment_name, image, image_tag, namespace)
     create_service(service_name, deployment_name, namespace)
     create_ingress(ingress_name, ingress_host, service_name, namespace)
     

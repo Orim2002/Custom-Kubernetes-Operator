@@ -64,7 +64,7 @@ spec:
       containers:
         - name: operator
           image: custom-operator:v5
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           resources:
             requests:
               cpu: "100m"

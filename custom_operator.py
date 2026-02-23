@@ -2,29 +2,6 @@ import kopf
 import logging
 import time
 from kubernetes import client, config
-from prometheus_client import Counter, Gauge, Histogram, start_http_server
-
-preview_envs_created = Counter(
-    'preview_environments_created_total',
-    'Total number of preview environments successfully created'
-)
-
-preview_envs_active = Gauge(
-    'preview_environments_active',
-    'Number of currently active preview environments'
-)
-
-preview_env_errors = Counter(
-    'preview_environment_errors_total',
-    'Total number of errors during preview environment resource creation',
-    ['resource']
-)
-
-preview_env_duration = Histogram(
-    'preview_environment_creation_duration_seconds',
-    'End-to-end time to provision a complete preview environment',
-    buckets=[0.5, 1.0, 2.5, 5.0, 10.0, 30.0]
-)
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +12,6 @@ except config.ConfigException:
         config.load_incluster_config()
     except config.ConfigException:
         logger.warning("Kubernetes config could not be loaded. This is expected during CI/tests.")
-
-start_http_server(8080)
 
 
 def create_deployment(deployment_name, image, tag, namespace):
@@ -87,7 +62,6 @@ def create_deployment(deployment_name, image, tag, namespace):
         apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
         logger.info(f"Successfully created Deployment: {deployment_name}")
     except client.exceptions.ApiException as e:
-        preview_env_errors.labels(resource='deployment').inc()
         logger.error(f"Failed to create deployment: {e}")
         raise e
     
@@ -113,7 +87,6 @@ def create_service(service_name, deployment_name, namespace):
         core_v1.create_namespaced_service(namespace=namespace, body=service)
         logger.info(f"Successfully created Serivce: {service_name}")
     except client.exceptions.ApiException as e:
-        preview_env_errors.labels(resource='service').inc()
         logger.error(f"Failed to create service: {e}")
         raise e
 
@@ -152,7 +125,6 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
         networking_v1.create_namespaced_ingress(namespace=namespace, body=ingress)
         logger.info(f"Successfully created Ingress: {ingress_name} for {ingress_host}")
     except client.exceptions.ApiException as e:
-        preview_env_errors.labels(resource='ingress').inc()
         logger.error(f"Failed to create ingress: {e}")
         raise e
 
@@ -172,10 +144,6 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     create_deployment(deployment_name, image, tag, namespace)
     create_service(service_name, deployment_name, namespace)
     create_ingress(ingress_name, ingress_host, service_name, namespace)
-    preview_env_duration.observe(time.time() - start)
-    preview_envs_created.inc()
-    preview_envs_active.inc()
-
     return {
         'status': 'Environment Created',
         'deployment': deployment_name,
@@ -189,4 +157,3 @@ def create_fn(spec, name, namespace, logger, **kwargs):
 def delete_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
     logger.info(f"Preview environment for PR {pr_number} deleted")
-    preview_envs_active.dec()

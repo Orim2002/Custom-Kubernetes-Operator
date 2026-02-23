@@ -12,20 +12,12 @@ spec:
     metadata:
       labels:
         app: "{{ .Chart.Name }}"
-      annotations:
-        prometheus.io/scrape: "true"
-        prometheus.io/port: "8080"
-        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: "{{ .Release.Name }}-operator-sa"
       containers:
         - name: operator
           image: "{{ .Values.operator.image.repository }}:{{ .Values.operator.image.tag }}"
           imagePullPolicy: {{ .Values.operator.image.pullPolicy }}
-          ports:
-            - name: metrics
-              containerPort: 8080
-              protocol: TCP
           resources:
             requests:
               cpu: "100m"

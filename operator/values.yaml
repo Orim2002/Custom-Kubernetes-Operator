@@ -1,0 +1,9 @@
+operator:
+  image:
+    repository: orima2002/custom-operator
+    tag: "latest"
+  replicaCount: 1
+  pullPolicy: IfNotPresent
+
+rbac:
+  create: true

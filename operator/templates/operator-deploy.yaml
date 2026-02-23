@@ -12,6 +12,10 @@ spec:
     metadata:
       labels:
         app: "{{ .Chart.Name }}"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       serviceAccountName: {{ .Release.Name }}-operator-sa
       containers:

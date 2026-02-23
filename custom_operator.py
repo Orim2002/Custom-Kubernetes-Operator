@@ -7,7 +7,10 @@ logger = logging.getLogger(__name__)
 try:
     config.load_kube_config()
 except config.ConfigException:
-    config.load_incluster_config()
+    try: 
+        config.load_incluster_config()
+    except config.ConfigException:
+        logger.warning("Kubernetes config could not be loaded. This is expected during CI/tests.")
 
 
 def create_deployment(deployment_name, image, tag, namespace):
@@ -127,6 +130,7 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
 @kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
 def create_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
+    branch_name = spec.get('branch_name')
     image = spec.get("image")
     tag = spec.get('image_tag')
 

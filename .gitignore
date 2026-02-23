@@ -1,4 +1,5 @@
 .vscode
 __pycache__/
 venv/
-operator-app.yaml
+argocd/
+.pytest_cache/

@@ -1,9 +1,11 @@
 name: Build and Push Operator Image
 
 on:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
-      - dev
+      - master
 
 jobs:
   test-python-code:

@@ -3,8 +3,8 @@ kind: CustomResourceDefinition
 metadata:
   name: previewenvironments.devops.orima.com
   labels:
-    app.kubernetes.io/name: { { .Chart.Name } }
-    app.kubernetes.io/instance: { { .Release.Name } }
+    app.kubernetes.io/name: "{{ .Chart.Name }}"
+    app.kubernetes.io/instance: "{{ .Release.Name }}"
 spec:
   group: devops.orima.com
   scope: Namespaced

@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: {{ .Release.Name }}-operator-sa
+  name: "{{ .Release.Name }}-operator-sa"
   namespace: {{ .Release.Namespace }}
 
 ---
@@ -10,7 +10,7 @@ metadata:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ .Release.Name }}-operator-role
+  name: "{{ .Release.Name }}-operator-role"
 rules:
   - apiGroups: ["devops.orima.com"]
     resources: ["previewenvironments", "previewenvironments/status"]
@@ -36,13 +36,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ .Release.Name }}-operator-role-binding
+  name: "{{ .Release.Name }}-operator-role-binding"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ .Release.Name }}-operator-role
+  name: "{{ .Release.Name }}-operator-role"
 subjects:
   - kind: ServiceAccount
-    name: {{ .Release.Name }}-operator-sa
+    name: "{{ .Release.Name }}-operator-sa"
     namespace: {{ .Release.Namespace }}
 {{- end }}

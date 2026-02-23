@@ -26,7 +26,7 @@ spec:
                 image_tag:
                   type: string
                   description: "The Docker image tag to deploy"
-              required: ["pr_number", "image_tag"]
+              required: ["pr_number", "branch_name", "image_tag"]
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true

@@ -55,13 +55,14 @@ jobs:
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ steps.vars.outputs.tag }}
 
       - name: Update Helm values.yaml
+        env:
+          HELM_REPO_TOKEN: ${{ secrets.HELM_REPO_TOKEN }}
         run: |
+          git clone https://x-access-token:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git helm-repo
+          cd helm-repo
           sed -i "s/tag: .*/tag: \"${{ steps.vars.outputs.tag }}\"/g" operator/values.yaml
-
-      - name: Commit and Push changes
-        run: |
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
           git add operator/values.yaml
-          git commit -m "chore: update image tag to ${{ github.sha }} [skip ci]"
-          git push origin HEAD:${{ github.ref_name }}
+          git commit -m "chore: update image tag to ${{ steps.vars.outputs.tag }}"
+          git push

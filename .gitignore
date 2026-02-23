@@ -1,6 +1,5 @@
 .vscode
 __pycache__/
 venv/
-operator-app.yaml
-prometheus-app.yaml
+argocd/
 .pytest_cache/

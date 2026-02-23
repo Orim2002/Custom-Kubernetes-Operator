@@ -1,17 +1,17 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ .Release.Name }}-python-operator
+  name: "{{ .Release.Name }}-python-operator"
   namespace: {{ .Release.Namespace }}
 spec:
   replicas: {{ .Values.operator.replicaCount }}
   selector:
     matchLabels:
-      app: {{ .Chart.Name }}
+      app: "{{ .Chart.Name }}"
   template:
     metadata:
       labels:
-        app: {{ .Chart.Name }}
+        app: "{{ .Chart.Name }}"
     spec:
       serviceAccountName: {{ .Release.Name }}-operator-sa
       containers:

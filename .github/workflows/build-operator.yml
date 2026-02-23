@@ -6,10 +6,6 @@ on:
       - closed
     branches:
       - master
-    paths:
-      - "operator.py"
-      - "Dockerfile"
-      - .github/workflows/build-operator.yml
 
 jobs:
   build-and-publish:

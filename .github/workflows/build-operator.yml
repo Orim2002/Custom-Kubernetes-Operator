@@ -58,7 +58,7 @@ jobs:
         env:
           HELM_REPO_TOKEN: ${{ secrets.HELM_REPO_TOKEN }}
         run: |
-          git clone https://x-access-token:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git helm-repo
+          git clone https://Orim2002:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git helm-repo
           cd helm-repo
           sed -i "s/tag: .*/tag: \"${{ steps.vars.outputs.tag }}\"/g" operator/values.yaml
           git config user.name "GitHub Actions Bot"

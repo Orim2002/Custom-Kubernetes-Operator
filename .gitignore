@@ -2,4 +2,5 @@
 __pycache__/
 venv/
 operator-app.yaml
+prometheus-app.yaml
 .pytest_cache/

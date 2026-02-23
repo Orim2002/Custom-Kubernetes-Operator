@@ -127,6 +127,7 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
 @kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
 def create_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
+    branch_name = spec.get('branch_name')
     image = spec.get("image")
     tag = spec.get('image_tag')
 

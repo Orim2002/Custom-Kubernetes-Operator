@@ -63,7 +63,7 @@ spec:
       serviceAccountName: operator-sa
       containers:
         - name: operator
-          image: orima2002/custom-operator:latest
+          image: orima2002/custom-operator:f80e2e557c20c684698b88707738022903a24c2c
           imagePullPolicy: IfNotPresent
           resources:
             requests:

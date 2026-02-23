@@ -11,7 +11,8 @@ jobs:
   build-and-publish:
     if: github.event.pull_request.merged == true && github.head_ref == 'dev'
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -33,26 +34,15 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }}
-      
-      - name: Update operator-deploy.yaml to latest version
-        run: |
-          sed -i "s|image: ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }}|g" operator-deploy.yaml
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin master
-          git add operator-deploy.yaml
-          git commit -m "chore: update operator image tag to ${{ github.sha }} [skip ci]" || echo "No changes to commit"
-          git push origin master
 
-  deploy-to-cluster:
-    needs: build-and-publish
-    runs-on: self-hosted
-    steps:
-      - name: Update Operator Image in Kubernetes
+      - name: Update Helm values.yaml
         run: |
-          echo "Deploying new Operator version to the cluster..."
-          kubectl set image deployment/custom-operator \
-            operator=${{ secrets.DOCKERHUB_USERNAME }}/custom-operator:${{ github.sha }} \
-            -n default
-          kubectl rollout status deployment/custom-operator -n default
-          echo "Operator successfully updated to version ${{ github.sha }}!"
+          sed -i "s/tag: .*/tag: \"${{ github.sha }}\"/g" operator/values.yaml
+
+      - name: Commit and Push changes
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          git add operator/values.yaml
+          git commit -m "chore: update image tag to ${{ github.sha }} [skip ci]"
+          git push origin dev

@@ -2,7 +2,7 @@ import kopf
 import logging
 import time
 from kubernetes import client, config
-from prometheus_client import Counter, Gauge, Histogram
+from prometheus_client import Counter, Gauge, Histogram, start_http_server
 
 preview_envs_created = Counter(
     'preview_environments_created_total',
@@ -31,10 +31,12 @@ logger = logging.getLogger(__name__)
 try:
     config.load_kube_config()
 except config.ConfigException:
-    try: 
+    try:
         config.load_incluster_config()
     except config.ConfigException:
         logger.warning("Kubernetes config could not be loaded. This is expected during CI/tests.")
+
+start_http_server(8080)
 
 
 def create_deployment(deployment_name, image, tag, namespace):

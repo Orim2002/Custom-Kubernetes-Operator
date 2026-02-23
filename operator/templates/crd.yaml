@@ -2,8 +2,16 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   name: previewenvironments.devops.orima.com
+  labels:
+    app.kubernetes.io/name: { { .Chart.Name } }
+    app.kubernetes.io/instance: { { .Release.Name } }
 spec:
   group: devops.orima.com
+  scope: Namespaced
+  names:
+    plural: previewenvironments
+    singular: previewenvironment
+    kind: PreviewEnvironment
   versions:
     - name: v1
       served: true
@@ -23,17 +31,13 @@ spec:
                 branch_name:
                   type: string
                   description: "The name of the Git branch"
+                image:
+                  type: string
+                  description: "The Docker image to deploy"
                 image_tag:
                   type: string
                   description: "The Docker image tag to deploy"
-              required: ["pr_number", "branch_name", "image_tag"]
+              required: ["pr_number", "branch_name", "image", "image_tag"]
             status:
               type: object
               x-kubernetes-preserve-unknown-fields: true
-  scope: Namespaced
-  names:
-    plural: previewenvironments
-    singular: previewenvironment
-    kind: PreviewEnvironment
-    shortNames:
-      - prenv

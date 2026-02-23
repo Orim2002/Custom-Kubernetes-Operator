@@ -7,7 +7,10 @@ logger = logging.getLogger(__name__)
 try:
     config.load_kube_config()
 except config.ConfigException:
-    config.load_incluster_config()
+    try: 
+        config.load_incluster_config()
+    except config.ConfigException:
+        logger.warning("Kubernetes config could not be loaded. This is expected during CI/tests.")
 
 
 def create_deployment(deployment_name, image, tag, namespace):

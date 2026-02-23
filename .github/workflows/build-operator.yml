@@ -20,7 +20,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
       - name: Run Pytest
-        run: pytest test_operator.py -v
+        run: |
+          pip install pytest
+          pytest test_operator.py -v
 
   build-and-update-helm:
     needs: test-python-code

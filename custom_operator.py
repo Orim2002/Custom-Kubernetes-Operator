@@ -1,7 +1,14 @@
 import kopf
 import logging
-import time
 from kubernetes import client, config
+from metrics import (
+    start_metrics_server,
+    ENVIRONMENTS_CREATED,
+    ENVIRONMENTS_FAILED,
+    ACTIVE_ENVIRONMENTS,
+    CREATION_DURATION,
+    RECONCILE_COUNT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +69,7 @@ def create_deployment(deployment_name, image, tag, namespace):
         apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
         logger.info(f"Successfully created Deployment: {deployment_name}")
     except client.exceptions.ApiException as e:
+        ENVIRONMENTS_FAILED.labels(step="deployment").inc() 
         logger.error(f"Failed to create deployment: {e}")
         raise e
     
@@ -87,6 +95,7 @@ def create_service(service_name, deployment_name, namespace):
         core_v1.create_namespaced_service(namespace=namespace, body=service)
         logger.info(f"Successfully created Serivce: {service_name}")
     except client.exceptions.ApiException as e:
+        ENVIRONMENTS_FAILED.labels(step="service").inc() 
         logger.error(f"Failed to create service: {e}")
         raise e
 
@@ -125,8 +134,14 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
         networking_v1.create_namespaced_ingress(namespace=namespace, body=ingress)
         logger.info(f"Successfully created Ingress: {ingress_name} for {ingress_host}")
     except client.exceptions.ApiException as e:
+        ENVIRONMENTS_FAILED.labels(step="ingress").inc()
         logger.error(f"Failed to create ingress: {e}")
         raise e
+    
+@kopf.on.startup()
+def startup_fn(**kwargs):
+    start_metrics_server()
+    logger.info("Prometheus metrics server started on :8000")
 
 @kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
 def create_fn(spec, name, namespace, logger, **kwargs):
@@ -140,10 +155,16 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     ingress_name = f"pr-{pr_number}-ingress"
     ingress_host = f"pr-{pr_number}.preview.orima.com"
 
-    start = time.time()
-    create_deployment(deployment_name, image, tag, namespace)
-    create_service(service_name, deployment_name, namespace)
-    create_ingress(ingress_name, ingress_host, service_name, namespace)
+    RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
+
+    with CREATION_DURATION.time():
+        create_deployment(deployment_name, image, tag, namespace)
+        create_service(service_name, deployment_name, namespace)
+        create_ingress(ingress_name, ingress_host, service_name, namespace)
+
+    ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
+    ACTIVE_ENVIRONMENTS.inc()    
+
     return {
         'status': 'Environment Created',
         'deployment': deployment_name,
@@ -156,4 +177,5 @@ def create_fn(spec, name, namespace, logger, **kwargs):
 @kopf.on.delete('devops.orima.com', 'v1', 'previewenvironments')
 def delete_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
+    ACTIVE_ENVIRONMENTS.dec() 
     logger.info(f"Preview environment for PR {pr_number} deleted")

@@ -60,6 +60,7 @@ jobs:
         run: |
           git clone https://Orim2002:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git helm-repo
           cd helm-repo
+          git remote set-url origin https://Orim2002:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git
           sed -i "s/tag: .*/tag: \"${{ steps.vars.outputs.tag }}\"/g" operator/values.yaml
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"

@@ -103,6 +103,7 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
     networking_v1 = client.NetworkingV1Api()
     networking_v1 = client.NetworkingV1Api()
     ingress_spec = client.V1IngressSpec(
+        ingress_class_name="nginx",
         rules=[
             client.V1IngressRule(
                 host=ingress_host,

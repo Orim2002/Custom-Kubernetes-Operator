@@ -104,6 +104,12 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
     networking_v1 = client.NetworkingV1Api()
     ingress_spec = client.V1IngressSpec(
         ingress_class_name="nginx",
+        tls=[
+            client.V1IngressTLS(
+                hosts=[ingress_host],
+                secret_name=f"{ingress_host}-tls"
+            )
+        ],
         rules=[
             client.V1IngressRule(
                 host=ingress_host,
@@ -127,7 +133,12 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
     ingress = client.V1Ingress(
         api_version="networking.k8s.io/v1",
         kind="Ingress",
-        metadata=client.V1ObjectMeta(name=ingress_name),
+        metadata=client.V1ObjectMeta(
+            name=ingress_name,
+            annotations={
+                "cert-manager.io/cluster-issuer": "selfsigned-issuer"
+            }
+        ),
         spec=ingress_spec
     )
     kopf.adopt(ingress)

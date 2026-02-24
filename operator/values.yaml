@@ -1,9 +1,0 @@
-operator:
-  image:
-    repository: orima2002/custom-operator
-    tag: "02eab48"
-  replicaCount: 1
-  pullPolicy: IfNotPresent
-
-rbac:
-  create: true

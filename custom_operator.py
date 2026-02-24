@@ -29,7 +29,7 @@ def create_deployment(deployment_name, image, tag, namespace):
     )
 
     health_probe = client.V1Probe(
-        http_get=client.V1HTTPGetAction(path="/", port=80),
+        http_get=client.V1HTTPGetAction(path="/", port=8000),
         initial_delay_seconds=2,
         period_seconds=5,
         timeout_seconds=2,

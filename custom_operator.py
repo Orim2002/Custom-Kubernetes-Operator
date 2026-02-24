@@ -179,3 +179,31 @@ def delete_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
     ACTIVE_ENVIRONMENTS.dec() 
     logger.info(f"Preview environment for PR {pr_number} deleted")
+
+@kopf.on.update('devops.orima.com', 'v1', 'previewenvironments')
+def update_fn(spec, name, namespace, logger, **kwargs):
+    pr_number = spec.get('pr_number')
+    image = spec.get("image")
+    tag = spec.get('image_tag')
+    deployment_name = f"pr-{pr_number}-app"
+
+    apps_v1 = client.AppsV1Api()
+    patch = {
+        "spec": {
+            "template": {
+                "spec": {
+                    "containers": [{
+                        "name": "app",
+                        "image": f"{image}:{tag}"
+                    }]
+                }
+            }
+        }
+    }
+    
+    apps_v1.patch_namespaced_deployment(
+        name=deployment_name,
+        namespace=namespace,
+        body=patch
+    )
+    logger.info(f"Updated deployment {deployment_name} to image {image}:{tag}")

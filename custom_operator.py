@@ -78,7 +78,7 @@ def create_service(service_name, deployment_name, namespace):
     
     service_spec = client.V1ServiceSpec(
         selector={"app": deployment_name},
-        ports=[client.V1ServicePort(port=80, target_port=80)],
+        ports=[client.V1ServicePort(port=80, target_port=8000)],
         type="ClusterIP"
     )
     
@@ -206,4 +206,5 @@ def update_fn(spec, name, namespace, logger, **kwargs):
         namespace=namespace,
         body=patch
     )
+    RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
     logger.info(f"Updated deployment {deployment_name} to image {image}:{tag}")

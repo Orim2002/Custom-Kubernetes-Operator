@@ -165,7 +165,7 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     deployment_name = f"pr-{pr_number}-app"
     service_name = f"pr-{pr_number}-svc"
     ingress_name = f"pr-{pr_number}-ingress"
-    ingress_host = f"pr-{pr_number}.preview.orima.com"
+    ingress_host = f"pr-{pr_number}.preview.orimatest.com"
 
     RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
 

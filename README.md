@@ -1,71 +1,119 @@
-# Kubernetes Dynamic Preview Environment Operator
+# Custom Kubernetes Operator
 
-A Custom Kubernetes Operator built with Python and Kopf that automates the provisioning and teardown of ephemeral preview environments for pull requests. 
+A Python-based Kubernetes operator built with [kopf](https://kopf.readthedocs.io/) that manages the full lifecycle of dynamic preview environments. It watches for `PreviewEnvironment` custom resources and automatically provisions or tears down isolated Kubernetes environments per Pull Request.
 
-## Overview
-In fast-paced engineering teams, developers need isolated environments to test their PRs before merging. Creating these manually is a bottleneck, and leaving them running indefinitely causes massive cloud waste.
+---
 
-This Operator solves both problems by extending the Kubernetes API with a `PreviewEnvironment` Custom Resource Definition (CRD). It actively listens to cluster events and dynamically provisions a dedicated `Deployment` and `Service` for every new PR. Once the PR is closed and the Custom Resource is deleted, Kubernetes Garbage Collection automatically destroys the underlying infrastructure, enabling true **FinOps** and zero-waste environments.
+## How It Works
 
-## Key Features
-* **Custom Kubernetes Controller:** Built entirely in Python using the `kopf` framework.
-* **Idempotent Reconciliation:** Ensures the actual state of the cluster matches the desired state seamlessly.
-* **Automated Cleanup:** Leverages Kubernetes OwnerReferences (`kopf.adopt`) for guaranteed garbage collection of orphaned resources.
-* **Least Privilege RBAC:** Runs securely inside the cluster with scoped permissions using dedicated ServiceAccounts and ClusterRoles.
+When a `PreviewEnvironment` CR is applied to the cluster, the operator:
 
-## Tech Stack
-* **Language:** Python 3.12
-* **Infrastructure:** Kubernetes, Docker
-* **Libraries:** `kopf` (Kubernetes Operator Pythonic Framework), `kubernetes-client`
+1. Creates a dedicated namespace `preview-pr-{N}` (full isolation per PR)
+2. Deploys the application as a Kubernetes `Deployment` with liveness/readiness probes and resource limits
+3. Creates a `ClusterIP Service` to route internal traffic
+4. Creates an NGINX `Ingress` with TLS via cert-manager → live at `https://pr-{N}.preview.orimatest.com`
 
-## Quick Start (Local Development)
+When the CR is deleted, the operator deletes the entire namespace — cascading all resources automatically.
 
-### 1. Prerequisites
-* [Docker](https://docs.docker.com/get-docker/)
-* [kind](https://kind.sigs.k8s.io/) (Kubernetes IN Docker)
-* `kubectl`
+---
 
-### 2. Cluster Setup
-Create a local cluster:
+## Files
+
+| File | Description |
+|------|-------------|
+| `custom_operator.py` | Main operator logic — all kopf event handlers |
+| `metrics.py` | Prometheus metrics definitions and HTTP server |
+| `test_operator.py` | Unit tests (pytest + unittest.mock) |
+| `Dockerfile` | Container image definition |
+| `requirements.txt` | Python dependencies |
+
+---
+
+## Operator Handlers
+
+| Handler | Trigger | What it does |
+|---------|---------|--------------|
+| `startup_fn` | Operator start | Starts Prometheus metrics HTTP server on port 8000 |
+| `create_fn` | CR created | Creates namespace, deployment, service, ingress |
+| `update_fn` | CR spec changed | Patches deployment with new image tag (rolling update) |
+| `delete_fn` | CR deleted | Deletes the PR namespace, cascading all resources |
+| `resume_fn` | Operator restart | Re-syncs in-memory gauge state without recreating resources |
+| `ttl_check_fn` | Every 60s (timer) | Auto-deletes CR if `ttl_seconds` has elapsed since creation |
+
+---
+
+## Prometheus Metrics
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `preview_environments_created_total` | Counter | `branch_name` | Total successful creates |
+| `preview_environments_failed_total` | Counter | `step` | Failures by step (deployment/service/ingress/update) |
+| `preview_environments_active` | Gauge | — | Currently live environments |
+| `preview_environments_reconcile_total` | Counter | `pr_number` | Reconciliation events per PR |
+| `preview_environment_creation_duration_seconds` | Histogram | — | End-to-end provisioning time |
+| `preview_environments_expired_total` | Counter | — | Environments auto-deleted by TTL |
+
+---
+
+## Running Locally
+
 ```bash
-kind create cluster --name operator-dev
+# Install dependencies
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Run (requires a valid kubeconfig)
+kopf run custom_operator.py --all-namespaces
 ```
 
-### 3. Build and load the operator
-Build the Docker image and load it directly into the `kind` cluster:
+## Running Tests
+
 ```bash
-docker build -t custom-operator:v1 .
-kind load docker-image custom-operator:v1 --name operator-dev
+pytest test_operator.py -v
 ```
 
-### 4. Deploy the operator
-Apply the CRD and the Operator manifests (RBAC + Deployment):
+---
+
+## Building the Docker Image
+
 ```bash
-kubectl apply -f crd.yaml
-kubectl apply -f operator-deploy.yaml
-```
-Verify the Operator is running:
-```bash
-kubectl get pods -l app=custom-operator
+docker build -t youruser/custom-operator:latest .
+docker push youruser/custom-operator:latest
 ```
 
-### 5. Create all the CR objects
-Create all the CR objects based on `cr.yaml`
-```bash
-kubectl apply -f cr.yaml
-kubectl get pods,svc
+---
+
+## Example Custom Resource
+
+```yaml
+apiVersion: devops.orima.com/v1
+kind: PreviewEnvironment
+metadata:
+  name: pr-42-env
+  namespace: preview-environments
+spec:
+  pr_number: 42
+  branch_name: "feature/my-feature"
+  image: "youruser/my-app"
+  image_tag: "a3f9c2d"
+  ttl_seconds: 3600  # optional: auto-delete after 1 hour
 ```
 
-## Architecture
+---
 
-### 1. Event
-CI/CD pipeline creates a `PreviewEnvironment` object in the cluster when a PR is opened.
+## Key Design Decisions
 
-### 2. Watch
-The Custom Operator detects the `create` event via the Kubernetes API.
+**Namespace isolation** — Each PR gets its own namespace (`preview-pr-{N}`). This prevents resource name collisions between PRs and makes cleanup trivial: deleting one namespace cascades all resources inside it, with no need for owner references.
 
-### 3. Reconcile
-The Operator dynamically generates a `Deployment` and a `ClusterIP Service`, injecting OwnerReferences.
+**TTL auto-cleanup** — The `ttl_seconds` field allows environments to self-destruct after a set time, preventing abandoned environments from running indefinitely and wasting cloud resources.
 
-### 4. Destroy
-When PR is merged/closed, the CI pipeline deletes the `PreviewEnvironment` object, triggering native Kubernetes cascade deletion.
+**Fallback on update** — If `update_fn` gets a 404 (deployment was manually deleted), it falls back to a full create rather than failing permanently.
+
+---
+
+## Dependencies
+
+- [kopf](https://github.com/nolar/kopf) — Kubernetes operator framework for Python
+- [kubernetes](https://github.com/kubernetes-client/python) — Official Kubernetes Python client
+- [prometheus-client](https://github.com/prometheus/client_python) — Prometheus metrics

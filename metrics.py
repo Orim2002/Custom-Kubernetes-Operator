@@ -37,6 +37,14 @@ CREATION_DURATION = Histogram(
     buckets=[1, 2, 5, 10, 20, 30, 60, float("inf")]
 )
 
+# Pre-initialize labels so metrics exist from startup even before any events occur
+ENVIRONMENTS_CREATED.labels(branch_name="unknown")
+ENVIRONMENTS_FAILED.labels(step="deployment")
+ENVIRONMENTS_FAILED.labels(step="service")
+ENVIRONMENTS_FAILED.labels(step="ingress")
+ENVIRONMENTS_FAILED.labels(step="update")
+RECONCILE_COUNT.labels(pr_number="unknown")
+
 def start_metrics_server(port: int = 8000):
     start_http_server(port)
     logger.info(f"Metrics server started on :{port}")

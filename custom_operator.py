@@ -73,8 +73,6 @@ def create_deployment(deployment_name, image, tag, namespace):
         spec=deployment_spec
     )
 
-    kopf.adopt(deployment)
-
     try:
         apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
         logger.info(f"Successfully created Deployment: {deployment_name}")
@@ -98,8 +96,6 @@ def create_service(service_name, deployment_name, namespace):
         metadata=client.V1ObjectMeta(name=service_name),
         spec=service_spec
     )
-
-    kopf.adopt(service)
 
     try:
         core_v1.create_namespaced_service(namespace=namespace, body=service)
@@ -150,7 +146,6 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
         ),
         spec=ingress_spec
     )
-    kopf.adopt(ingress)
     try:
         networking_v1.create_namespaced_ingress(namespace=namespace, body=ingress)
         logger.info(f"Successfully created Ingress: {ingress_name} for {ingress_host}")

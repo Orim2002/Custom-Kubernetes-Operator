@@ -5,8 +5,7 @@ import kopf
 import custom_operator
 
 @patch('custom_operator.client.AppsV1Api')
-@patch('custom_operator.kopf.adopt')
-def test_create_deployment(mock_adopt, mock_apps_v1):
+def test_create_deployment(mock_apps_v1):
     mock_api_instance = mock_apps_v1.return_value
     deployment_name = "pr-142-app"
     image = "orim2002/my-app"
@@ -22,11 +21,9 @@ def test_create_deployment(mock_adopt, mock_apps_v1):
     assert container.image == "orim2002/my-app:v2.1"
     assert container.liveness_probe is not None
     assert container.readiness_probe.http_get.path == "/"
-    mock_adopt.assert_called_once_with(created_deployment)
 
 @patch('custom_operator.client.CoreV1Api')
-@patch('custom_operator.kopf.adopt')
-def test_create_service(mock_adopt, mock_core_v1):
+def test_create_service(mock_core_v1):
     mock_api_instance = mock_core_v1.return_value
     custom_operator.create_service("pr-142-svc", "pr-142-app", "preview-pr-142")
     mock_api_instance.create_namespaced_service.assert_called_once()
@@ -37,8 +34,7 @@ def test_create_service(mock_adopt, mock_core_v1):
     assert created_service.spec.ports[0].port == 80
 
 @patch('custom_operator.client.NetworkingV1Api')
-@patch('custom_operator.kopf.adopt')
-def test_create_ingress(mock_adopt, mock_networking_v1):
+def test_create_ingress(mock_networking_v1):
     mock_api_instance = mock_networking_v1.return_value
     custom_operator.create_ingress("pr-142-ingress", "pr-142.preview.orimatest.com", "pr-142-svc", "preview-pr-142")
     mock_api_instance.create_namespaced_ingress.assert_called_once()
@@ -51,7 +47,6 @@ def test_create_ingress(mock_adopt, mock_networking_v1):
     assert ingress.spec.tls[0].hosts[0] == "pr-142.preview.orimatest.com"
     assert ingress.spec.rules[0].host == "pr-142.preview.orimatest.com"
     assert ingress.spec.rules[0].http.paths[0].backend.service.name == "pr-142-svc"
-    mock_adopt.assert_called_once_with(ingress)
 
 @patch('custom_operator.client.CoreV1Api')
 @patch('custom_operator.create_ingress')

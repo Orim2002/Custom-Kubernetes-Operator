@@ -11,11 +11,11 @@ def test_create_deployment(mock_adopt, mock_apps_v1):
     deployment_name = "pr-142-app"
     image = "orim2002/my-app"
     tag = "v2.1"
-    namespace = "preview-envs"
+    namespace = "preview-pr-142"
     custom_operator.create_deployment(deployment_name, image, tag, namespace)
     mock_api_instance.create_namespaced_deployment.assert_called_once()
     args, kwargs = mock_api_instance.create_namespaced_deployment.call_args
-    assert kwargs['namespace'] == "preview-envs"
+    assert kwargs['namespace'] == "preview-pr-142"
     created_deployment = kwargs['body']
     assert created_deployment.metadata.name == "pr-142-app"
     container = created_deployment.spec.template.spec.containers[0]
@@ -28,7 +28,7 @@ def test_create_deployment(mock_adopt, mock_apps_v1):
 @patch('custom_operator.kopf.adopt')
 def test_create_service(mock_adopt, mock_core_v1):
     mock_api_instance = mock_core_v1.return_value
-    custom_operator.create_service("pr-142-svc", "pr-142-app", "preview-envs")
+    custom_operator.create_service("pr-142-svc", "pr-142-app", "preview-pr-142")
     mock_api_instance.create_namespaced_service.assert_called_once()
     _, kwargs = mock_api_instance.create_namespaced_service.call_args
     created_service = kwargs['body']
@@ -40,10 +40,10 @@ def test_create_service(mock_adopt, mock_core_v1):
 @patch('custom_operator.kopf.adopt')
 def test_create_ingress(mock_adopt, mock_networking_v1):
     mock_api_instance = mock_networking_v1.return_value
-    custom_operator.create_ingress("pr-142-ingress", "pr-142.preview.orimatest.com", "pr-142-svc", "preview-envs")
+    custom_operator.create_ingress("pr-142-ingress", "pr-142.preview.orimatest.com", "pr-142-svc", "preview-pr-142")
     mock_api_instance.create_namespaced_ingress.assert_called_once()
     _, kwargs = mock_api_instance.create_namespaced_ingress.call_args
-    assert kwargs['namespace'] == "preview-envs"
+    assert kwargs['namespace'] == "preview-pr-142"
     ingress = kwargs['body']
     assert ingress.metadata.name == "pr-142-ingress"
     assert ingress.metadata.annotations["cert-manager.io/cluster-issuer"] == "selfsigned-issuer"
@@ -53,17 +53,19 @@ def test_create_ingress(mock_adopt, mock_networking_v1):
     assert ingress.spec.rules[0].http.paths[0].backend.service.name == "pr-142-svc"
     mock_adopt.assert_called_once_with(ingress)
 
+@patch('custom_operator.client.CoreV1Api')
 @patch('custom_operator.create_ingress')
 @patch('custom_operator.create_service')
 @patch('custom_operator.create_deployment')
-def test_create_fn_success(mock_create_deployment, mock_create_service, mock_create_ingress):
+def test_create_fn_success(mock_create_deployment, mock_create_service, mock_create_ingress, mock_core_v1):
     spec = {'pr_number': 142, 'branch_name': 'feature-x', 'image': 'orim2002/my-app', 'image_tag': 'v2.1'}
     result = custom_operator.create_fn(spec=spec, name='test', namespace='preview-envs', logger=MagicMock())
-    mock_create_deployment.assert_called_once_with("pr-142-app", "orim2002/my-app", "v2.1", "preview-envs")
-    mock_create_service.assert_called_once_with("pr-142-svc", "pr-142-app", "preview-envs")
-    mock_create_ingress.assert_called_once_with("pr-142-ingress", "pr-142.preview.orimatest.com", "pr-142-svc", "preview-envs")
+    mock_create_deployment.assert_called_once_with("pr-142-app", "orim2002/my-app", "v2.1", "preview-pr-142")
+    mock_create_service.assert_called_once_with("pr-142-svc", "pr-142-app", "preview-pr-142")
+    mock_create_ingress.assert_called_once_with("pr-142-ingress", "pr-142.preview.orimatest.com", "pr-142-svc", "preview-pr-142")
     assert result['status'] == 'Environment Created'
     assert result['url'] == 'https://pr-142.preview.orimatest.com'
+    assert result['namespace'] == 'preview-pr-142'
 
 def test_create_fn_missing_fields():
     spec = {'pr_number': 142, 'branch_name': 'feature-x'}  # missing image and image_tag
@@ -78,7 +80,7 @@ def test_update_fn(mock_apps_v1):
     mock_api_instance.patch_namespaced_deployment.assert_called_once()
     _, kwargs = mock_api_instance.patch_namespaced_deployment.call_args
     assert kwargs['name'] == "pr-142-app"
-    assert kwargs['namespace'] == "preview-envs"
+    assert kwargs['namespace'] == "preview-pr-142"
     assert kwargs['body']['spec']['template']['spec']['containers'][0]['image'] == "orim2002/my-app:v2.2"
 
 def test_update_fn_missing_fields():
@@ -86,9 +88,11 @@ def test_update_fn_missing_fields():
     with pytest.raises(kopf.PermanentError):
         custom_operator.update_fn(spec=spec, name='test', namespace='preview-envs', logger=MagicMock())
 
-def test_delete_fn_decrements_gauge():
+@patch('custom_operator.client.CoreV1Api')
+def test_delete_fn_decrements_gauge(mock_core_v1):
     spec = {'pr_number': 142}
     before = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
     custom_operator.delete_fn(spec=spec, name='test', namespace='preview-envs', logger=MagicMock())
     after = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
     assert after == before - 1
+    mock_core_v1.return_value.delete_namespace.assert_called_once_with("preview-pr-142")

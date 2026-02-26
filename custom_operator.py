@@ -12,6 +12,14 @@ from metrics import (
 
 logger = logging.getLogger(__name__)
 
+APP_PORT = 8000
+METRICS_PORT = 8000
+PREVIEW_DOMAIN = "preview.orimatest.com"
+INGRESS_CLASS = "nginx"
+CLUSTER_ISSUER = "selfsigned-issuer"
+RESOURCE_REQUESTS = {"cpu": "100m", "memory": "128Mi"}
+RESOURCE_LIMITS = {"cpu": "250m", "memory": "256Mi"}
+
 try:
     config.load_kube_config()
 except config.ConfigException:
@@ -24,12 +32,12 @@ except config.ConfigException:
 def create_deployment(deployment_name, image, tag, namespace):
     apps_v1 = client.AppsV1Api()
     resources = client.V1ResourceRequirements(
-        requests={"cpu": "100m", "memory": "128Mi"},
-        limits={"cpu": "250m", "memory": "256Mi"},
+        requests=RESOURCE_REQUESTS,
+        limits=RESOURCE_LIMITS,
     )
 
     health_probe = client.V1Probe(
-        http_get=client.V1HTTPGetAction(path="/", port=8000),
+        http_get=client.V1HTTPGetAction(path="/", port=APP_PORT),
         initial_delay_seconds=2,
         period_seconds=5,
         timeout_seconds=2,
@@ -39,7 +47,7 @@ def create_deployment(deployment_name, image, tag, namespace):
     container = client.V1Container(
         name="app",
         image=f"{image}:{tag}",
-        ports=[client.V1ContainerPort(container_port=8000)],
+        ports=[client.V1ContainerPort(container_port=APP_PORT)],
         resources=resources,
         liveness_probe=health_probe,
         readiness_probe=health_probe
@@ -78,7 +86,7 @@ def create_service(service_name, deployment_name, namespace):
     
     service_spec = client.V1ServiceSpec(
         selector={"app": deployment_name},
-        ports=[client.V1ServicePort(port=80, target_port=8000)],
+        ports=[client.V1ServicePort(port=80, target_port=APP_PORT)],
         type="ClusterIP"
     )
     
@@ -93,7 +101,7 @@ def create_service(service_name, deployment_name, namespace):
 
     try:
         core_v1.create_namespaced_service(namespace=namespace, body=service)
-        logger.info(f"Successfully created Serivce: {service_name}")
+        logger.info(f"Successfully created Service: {service_name}")
     except client.exceptions.ApiException as e:
         ENVIRONMENTS_FAILED.labels(step="service").inc() 
         logger.error(f"Failed to create service: {e}")
@@ -101,9 +109,8 @@ def create_service(service_name, deployment_name, namespace):
 
 def create_ingress(ingress_name, ingress_host, service_name, namespace):
     networking_v1 = client.NetworkingV1Api()
-    networking_v1 = client.NetworkingV1Api()
     ingress_spec = client.V1IngressSpec(
-        ingress_class_name="nginx",
+        ingress_class_name=INGRESS_CLASS,
         tls=[
             client.V1IngressTLS(
                 hosts=[ingress_host],
@@ -136,7 +143,7 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
         metadata=client.V1ObjectMeta(
             name=ingress_name,
             annotations={
-                "cert-manager.io/cluster-issuer": "selfsigned-issuer"
+                "cert-manager.io/cluster-issuer": CLUSTER_ISSUER
             }
         ),
         spec=ingress_spec
@@ -152,8 +159,8 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
     
 @kopf.on.startup()
 def startup_fn(**kwargs):
-    start_metrics_server()
-    logger.info("Prometheus metrics server started on :8000")
+    start_metrics_server(port=METRICS_PORT)
+    logger.info(f"Prometheus metrics server started on :{METRICS_PORT}")
 
 @kopf.on.create('devops.orima.com', 'v1', 'previewenvironments')
 def create_fn(spec, name, namespace, logger, **kwargs):
@@ -162,10 +169,13 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     image = spec.get("image")
     tag = spec.get('image_tag')
 
+    if not all([pr_number, image, tag]):
+        raise kopf.PermanentError("spec must include pr_number, image, and image_tag")
+
     deployment_name = f"pr-{pr_number}-app"
     service_name = f"pr-{pr_number}-svc"
     ingress_name = f"pr-{pr_number}-ingress"
-    ingress_host = f"pr-{pr_number}.preview.orimatest.com"
+    ingress_host = f"pr-{pr_number}.{PREVIEW_DOMAIN}"
 
     RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
 
@@ -182,9 +192,14 @@ def create_fn(spec, name, namespace, logger, **kwargs):
         'deployment': deployment_name,
         'service': service_name,
         'ingress': ingress_name,
-        'url': f"http://{ingress_host}"
+        'url': f"https://{ingress_host}"
     }
 
+
+@kopf.on.resume('devops.orima.com', 'v1', 'previewenvironments')
+def resume_fn(name, logger, **kwargs):
+    ACTIVE_ENVIRONMENTS.inc()
+    logger.info(f"Resumed tracking active environment: {name}")
 
 @kopf.on.delete('devops.orima.com', 'v1', 'previewenvironments')
 def delete_fn(spec, name, namespace, logger, **kwargs):
@@ -197,6 +212,10 @@ def update_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
     image = spec.get("image")
     tag = spec.get('image_tag')
+
+    if not all([pr_number, image, tag]):
+        raise kopf.PermanentError("spec must include pr_number, image, and image_tag")
+
     deployment_name = f"pr-{pr_number}-app"
 
     apps_v1 = client.AppsV1Api()
@@ -213,10 +232,15 @@ def update_fn(spec, name, namespace, logger, **kwargs):
         }
     }
     
-    apps_v1.patch_namespaced_deployment(
-        name=deployment_name,
-        namespace=namespace,
-        body=patch
-    )
+    try:
+        apps_v1.patch_namespaced_deployment(
+            name=deployment_name,
+            namespace=namespace,
+            body=patch
+        )
+    except client.exceptions.ApiException as e:
+        ENVIRONMENTS_FAILED.labels(step="update").inc()
+        logger.error(f"Failed to update deployment {deployment_name}: {e}")
+        raise e
     RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
     logger.info(f"Updated deployment {deployment_name} to image {image}:{tag}")

@@ -197,8 +197,10 @@ def create_fn(spec, name, namespace, logger, **kwargs):
 
 
 @kopf.on.resume('devops.orima.com', 'v1', 'previewenvironments')
-def resume_fn(name, logger, **kwargs):
+def resume_fn(name, spec, logger, **kwargs):
     ACTIVE_ENVIRONMENTS.inc()
+    branch_name = spec.get('branch_name', 'unknown')
+    ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
     logger.info(f"Resumed tracking active environment: {name}")
 
 @kopf.on.delete('devops.orima.com', 'v1', 'previewenvironments')

@@ -298,8 +298,34 @@ def update_fn(spec, name, namespace, logger, **kwargs):
             body=patch
         )
     except client.exceptions.ApiException as e:
-        ENVIRONMENTS_FAILED.labels(step="update").inc()
-        logger.error(f"Failed to update deployment {deployment_name}: {e}")
-        raise e
+        if e.status == 404:
+            logger.warning(f"Deployment {deployment_name} not found in {pr_namespace}, falling back to full create")
+            branch_name = spec.get('branch_name', 'unknown')
+            service_name = f"pr-{pr_number}-svc"
+            ingress_name = f"pr-{pr_number}-ingress"
+            ingress_host = f"pr-{pr_number}.{PREVIEW_DOMAIN}"
+            core_v1 = client.CoreV1Api()
+            try:
+                core_v1.create_namespace(body={
+                    "apiVersion": "v1",
+                    "kind": "Namespace",
+                    "metadata": {
+                        "name": pr_namespace,
+                        "labels": {"managed-by": "preview-operator", "pr-number": str(pr_number)}
+                    }
+                })
+            except client.exceptions.ApiException as ns_e:
+                if ns_e.status != 409:
+                    raise
+            with CREATION_DURATION.time():
+                create_deployment(deployment_name, image, tag, pr_namespace)
+                create_service(service_name, deployment_name, pr_namespace)
+                create_ingress(ingress_name, ingress_host, service_name, pr_namespace)
+            ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
+            ACTIVE_ENVIRONMENTS.inc()
+        else:
+            ENVIRONMENTS_FAILED.labels(step="update").inc()
+            logger.error(f"Failed to update deployment {deployment_name}: {e}")
+            raise e
     RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
     logger.info(f"Updated deployment {deployment_name} to image {image}:{tag}")

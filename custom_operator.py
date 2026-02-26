@@ -1,10 +1,12 @@
 import kopf
 import logging
+from datetime import datetime, timezone
 from kubernetes import client, config
 from metrics import (
     start_metrics_server,
     ENVIRONMENTS_CREATED,
     ENVIRONMENTS_FAILED,
+    ENVIRONMENTS_EXPIRED,
     ACTIVE_ENVIRONMENTS,
     CREATION_DURATION,
     RECONCILE_COUNT,
@@ -77,33 +79,33 @@ def create_deployment(deployment_name, image, tag, namespace):
         apps_v1.create_namespaced_deployment(namespace=namespace, body=deployment)
         logger.info(f"Successfully created Deployment: {deployment_name}")
     except client.exceptions.ApiException as e:
-        ENVIRONMENTS_FAILED.labels(step="deployment").inc() 
+        ENVIRONMENTS_FAILED.labels(step="deployment").inc()
         logger.error(f"Failed to create deployment: {e}")
         raise e
-    
+
 def create_service(service_name, deployment_name, namespace):
     core_v1 = client.CoreV1Api()
-    
+
     service_spec = client.V1ServiceSpec(
         selector={"app": deployment_name},
         ports=[client.V1ServicePort(port=80, target_port=APP_PORT)],
         type="ClusterIP"
     )
-    
+
     service = client.V1Service(
         api_version="v1",
         kind="Service",
         metadata=client.V1ObjectMeta(name=service_name),
         spec=service_spec
     )
-    
+
     kopf.adopt(service)
 
     try:
         core_v1.create_namespaced_service(namespace=namespace, body=service)
         logger.info(f"Successfully created Service: {service_name}")
     except client.exceptions.ApiException as e:
-        ENVIRONMENTS_FAILED.labels(step="service").inc() 
+        ENVIRONMENTS_FAILED.labels(step="service").inc()
         logger.error(f"Failed to create service: {e}")
         raise e
 
@@ -156,7 +158,7 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
         ENVIRONMENTS_FAILED.labels(step="ingress").inc()
         logger.error(f"Failed to create ingress: {e}")
         raise e
-    
+
 @kopf.on.startup()
 def startup_fn(**kwargs):
     start_metrics_server(port=METRICS_PORT)
@@ -172,42 +174,96 @@ def create_fn(spec, name, namespace, logger, **kwargs):
     if not all([pr_number, image, tag]):
         raise kopf.PermanentError("spec must include pr_number, image, and image_tag")
 
+    pr_namespace = f"preview-pr-{pr_number}"
     deployment_name = f"pr-{pr_number}-app"
     service_name = f"pr-{pr_number}-svc"
     ingress_name = f"pr-{pr_number}-ingress"
     ingress_host = f"pr-{pr_number}.{PREVIEW_DOMAIN}"
 
+    core_v1 = client.CoreV1Api()
+    try:
+        core_v1.create_namespace(body={
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": pr_namespace,
+                "labels": {"managed-by": "preview-operator", "pr-number": str(pr_number)}
+            }
+        })
+        logger.info(f"Created namespace {pr_namespace}")
+    except client.exceptions.ApiException as e:
+        if e.status != 409:
+            raise
+
     RECONCILE_COUNT.labels(pr_number=str(pr_number)).inc()
 
     with CREATION_DURATION.time():
-        create_deployment(deployment_name, image, tag, namespace)
-        create_service(service_name, deployment_name, namespace)
-        create_ingress(ingress_name, ingress_host, service_name, namespace)
+        create_deployment(deployment_name, image, tag, pr_namespace)
+        create_service(service_name, deployment_name, pr_namespace)
+        create_ingress(ingress_name, ingress_host, service_name, pr_namespace)
 
     ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
-    ACTIVE_ENVIRONMENTS.inc()    
+    ACTIVE_ENVIRONMENTS.inc()
 
     return {
         'status': 'Environment Created',
         'deployment': deployment_name,
         'service': service_name,
         'ingress': ingress_name,
+        'namespace': pr_namespace,
         'url': f"https://{ingress_host}"
     }
 
 
 @kopf.on.resume('devops.orima.com', 'v1', 'previewenvironments')
 def resume_fn(name, spec, logger, **kwargs):
-    ACTIVE_ENVIRONMENTS.inc()
+    pr_number = spec.get('pr_number')
     branch_name = spec.get('branch_name', 'unknown')
+    pr_namespace = f"preview-pr-{pr_number}"
+    core_v1 = client.CoreV1Api()
+    try:
+        core_v1.read_namespace(pr_namespace)
+    except client.exceptions.ApiException as e:
+        if e.status == 404:
+            logger.warning(f"Namespace {pr_namespace} not found, skipping resume for {name}")
+            return
+        raise
+    ACTIVE_ENVIRONMENTS.inc()
     ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
     logger.info(f"Resumed tracking active environment: {name}")
 
 @kopf.on.delete('devops.orima.com', 'v1', 'previewenvironments')
 def delete_fn(spec, name, namespace, logger, **kwargs):
     pr_number = spec.get('pr_number')
-    ACTIVE_ENVIRONMENTS.dec() 
+    pr_namespace = f"preview-pr-{pr_number}"
+    core_v1 = client.CoreV1Api()
+    try:
+        core_v1.delete_namespace(pr_namespace)
+        logger.info(f"Deleted namespace {pr_namespace}")
+    except client.exceptions.ApiException as e:
+        if e.status != 404:
+            raise
+    ACTIVE_ENVIRONMENTS.dec()
     logger.info(f"Preview environment for PR {pr_number} deleted")
+
+@kopf.timer('devops.orima.com', 'v1', 'previewenvironments', interval=60)
+def ttl_check_fn(name, namespace, spec, meta, logger, **kwargs):
+    ttl = spec.get('ttl_seconds')
+    if ttl is None:
+        return
+    creation_time = datetime.fromisoformat(meta['creationTimestamp'].replace('Z', '+00:00'))
+    age_seconds = (datetime.now(timezone.utc) - creation_time).total_seconds()
+    if age_seconds >= ttl:
+        logger.info(f"TTL expired for {name} (age={int(age_seconds)}s, ttl={ttl}s). Deleting.")
+        custom_api = client.CustomObjectsApi()
+        custom_api.delete_namespaced_custom_object(
+            group="devops.orima.com",
+            version="v1",
+            namespace=namespace,
+            plural="previewenvironments",
+            name=name,
+        )
+        ENVIRONMENTS_EXPIRED.inc()
 
 @kopf.on.update('devops.orima.com', 'v1', 'previewenvironments')
 def update_fn(spec, name, namespace, logger, **kwargs):
@@ -219,6 +275,7 @@ def update_fn(spec, name, namespace, logger, **kwargs):
         raise kopf.PermanentError("spec must include pr_number, image, and image_tag")
 
     deployment_name = f"pr-{pr_number}-app"
+    pr_namespace = f"preview-pr-{pr_number}"
 
     apps_v1 = client.AppsV1Api()
     patch = {
@@ -233,11 +290,11 @@ def update_fn(spec, name, namespace, logger, **kwargs):
             }
         }
     }
-    
+
     try:
         apps_v1.patch_namespaced_deployment(
             name=deployment_name,
-            namespace=namespace,
+            namespace=pr_namespace,
             body=patch
         )
     except client.exceptions.ApiException as e:

@@ -37,6 +37,12 @@ CREATION_DURATION = Histogram(
     buckets=[1, 2, 5, 10, 20, 30, 60, float("inf")]
 )
 
+# How many environments were auto-deleted due to TTL expiry
+ENVIRONMENTS_EXPIRED = Counter(
+    "preview_environments_expired_total",
+    "Total preview environments auto-deleted due to TTL expiry"
+)
+
 # Pre-initialize labels so metrics exist from startup even before any events occur
 ENVIRONMENTS_CREATED.labels(branch_name="unknown")
 ENVIRONMENTS_FAILED.labels(step="deployment")

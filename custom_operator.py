@@ -15,8 +15,8 @@ from metrics import (
 
 logger = logging.getLogger(__name__)
 
-APP_PORT = 8000
-METRICS_PORT = 8000
+APP_PORT = 8000 # port the preview app container listens on
+METRICS_PORT = 8000 # port the operator's Prometheus metrics server binds to
 PREVIEW_DOMAIN = "preview.orimatest.com"
 INGRESS_CLASS = "nginx"
 CLUSTER_ISSUER = "letsencrypt-issuer"

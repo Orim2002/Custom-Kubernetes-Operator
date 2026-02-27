@@ -1,6 +1,8 @@
 import pytest
 from unittest.mock import patch, MagicMock
+from datetime import datetime, timezone, timedelta
 import kopf
+from kubernetes import client
 
 import custom_operator
 
@@ -93,3 +95,65 @@ def test_delete_fn_decrements_gauge(mock_core_v1):
     after = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
     assert after == before - 1
     mock_core_v1.return_value.delete_namespace.assert_called_once_with("preview-pr-142")
+
+# --- resume_fn ---
+
+@patch('custom_operator.client.CoreV1Api')
+def test_resume_fn_namespace_exists(mock_core_v1):
+    mock_core_v1.return_value.read_namespace.return_value = MagicMock()
+    before = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
+    custom_operator.resume_fn(name='pr-142-env', spec={'pr_number': 142}, logger=MagicMock())
+    after = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
+    assert after == before + 1
+
+@patch('custom_operator.client.CoreV1Api')
+def test_resume_fn_namespace_not_found(mock_core_v1):
+    mock_core_v1.return_value.read_namespace.side_effect = client.exceptions.ApiException(status=404)
+    before = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
+    custom_operator.resume_fn(name='pr-142-env', spec={'pr_number': 142}, logger=MagicMock())
+    after = custom_operator.ACTIVE_ENVIRONMENTS._value.get()
+    assert after == before  # no change — returns early
+
+@patch('custom_operator.client.CoreV1Api')
+def test_resume_fn_other_api_error(mock_core_v1):
+    mock_core_v1.return_value.read_namespace.side_effect = client.exceptions.ApiException(status=500)
+    with pytest.raises(client.exceptions.ApiException):
+        custom_operator.resume_fn(name='pr-142-env', spec={'pr_number': 142}, logger=MagicMock())
+
+# --- ttl_check_fn ---
+
+@patch('custom_operator.client.CustomObjectsApi')
+def test_ttl_check_fn_no_ttl(mock_custom_api):
+    meta = {'creationTimestamp': '2024-01-01T00:00:00Z'}
+    custom_operator.ttl_check_fn(
+        name='pr-142-env', namespace='preview-envs', spec={}, meta=meta, logger=MagicMock()
+    )
+    mock_custom_api.return_value.delete_namespaced_custom_object.assert_not_called()
+
+@patch('custom_operator.client.CustomObjectsApi')
+def test_ttl_check_fn_not_expired(mock_custom_api):
+    meta = {'creationTimestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')}
+    spec = {'ttl_seconds': 86400}
+    custom_operator.ttl_check_fn(
+        name='pr-142-env', namespace='preview-envs', spec=spec, meta=meta, logger=MagicMock()
+    )
+    mock_custom_api.return_value.delete_namespaced_custom_object.assert_not_called()
+
+@patch('custom_operator.client.CustomObjectsApi')
+def test_ttl_check_fn_expired(mock_custom_api):
+    past = datetime.now(timezone.utc) - timedelta(hours=1)
+    meta = {'creationTimestamp': past.strftime('%Y-%m-%dT%H:%M:%SZ')}
+    spec = {'ttl_seconds': 60}
+    before = custom_operator.ENVIRONMENTS_EXPIRED._value.get()
+    custom_operator.ttl_check_fn(
+        name='pr-142-env', namespace='preview-envs', spec=spec, meta=meta, logger=MagicMock()
+    )
+    after = custom_operator.ENVIRONMENTS_EXPIRED._value.get()
+    assert after == before + 1
+    mock_custom_api.return_value.delete_namespaced_custom_object.assert_called_once_with(
+        group="devops.orima.com",
+        version="v1",
+        namespace="preview-envs",
+        plural="previewenvironments",
+        name="pr-142-env",
+    )

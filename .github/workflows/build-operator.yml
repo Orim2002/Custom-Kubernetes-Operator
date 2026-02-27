@@ -57,13 +57,15 @@ jobs:
       - name: Update Helm values.yaml
         env:
           HELM_REPO_TOKEN: ${{ secrets.HELM_REPO_TOKEN }}
+          IMAGE_TAG: ${{ steps.vars.outputs.tag }}
         run: |
-          git clone https://Orim2002:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git helm-repo
+          git config --global credential.helper store
+          echo "https://Orim2002:${HELM_REPO_TOKEN}@github.com" > ~/.git-credentials
+          git clone https://github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git helm-repo
           cd helm-repo
-          git remote set-url origin https://Orim2002:${HELM_REPO_TOKEN}@github.com/Orim2002/Custom-Kubernetes-Operator-HelmChart.git
-          sed -i "s/tag: .*/tag: \"${{ steps.vars.outputs.tag }}\"/g" operator/values.yaml
+          sed -i "s/tag: .*/tag: \"${IMAGE_TAG}\"/g" operator/values.yaml
           git config user.name "GitHub Actions Bot"
           git config user.email "actions@github.com"
           git add operator/values.yaml
-          git commit -m "chore: update image tag to ${{ steps.vars.outputs.tag }}"
+          git commit -m "chore: update image tag to ${IMAGE_TAG}"
           git push

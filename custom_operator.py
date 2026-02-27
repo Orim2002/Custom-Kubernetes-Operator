@@ -258,7 +258,6 @@ def create_fn(spec, name, namespace, logger, **kwargs):
 @kopf.on.resume('devops.orima.com', 'v1', 'previewenvironments')
 def resume_fn(name, spec, logger, **kwargs):
     pr_number = spec.get('pr_number')
-    branch_name = spec.get('branch_name', 'unknown')
     pr_namespace = f"preview-pr-{pr_number}"
     core_v1 = client.CoreV1Api()
     try:
@@ -269,7 +268,6 @@ def resume_fn(name, spec, logger, **kwargs):
             return
         raise
     ACTIVE_ENVIRONMENTS.inc()
-    ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
     logger.info(f"Resumed tracking active environment: {name}")
 
 @kopf.on.delete('devops.orima.com', 'v1', 'previewenvironments')

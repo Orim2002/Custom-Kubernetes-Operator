@@ -1,5 +1,6 @@
 import kopf
 import logging
+import re
 from datetime import datetime, timezone
 from kubernetes import client, config
 from metrics import (
@@ -18,7 +19,7 @@ APP_PORT = 8000
 METRICS_PORT = 8000
 PREVIEW_DOMAIN = "preview.orimatest.com"
 INGRESS_CLASS = "nginx"
-CLUSTER_ISSUER = "selfsigned-issuer"
+CLUSTER_ISSUER = "letsencrypt-issuer"
 RESOURCE_REQUESTS = {"cpu": "100m", "memory": "128Mi"}
 RESOURCE_LIMITS = {"cpu": "250m", "memory": "256Mi"}
 
@@ -154,6 +155,40 @@ def create_ingress(ingress_name, ingress_host, service_name, namespace):
         logger.error(f"Failed to create ingress: {e}")
         raise e
 
+def create_network_policy(deployment_name, namespace):
+    networking_v1 = client.NetworkingV1Api()
+    netpol = client.V1NetworkPolicy(
+        api_version="networking.k8s.io/v1",
+        kind="NetworkPolicy",
+        metadata=client.V1ObjectMeta(name=f"{deployment_name}-netpol"),
+        spec=client.V1NetworkPolicySpec(
+            pod_selector=client.V1LabelSelector(
+                match_labels={"app": deployment_name}
+            ),
+            policy_types=["Ingress"],
+            ingress=[
+                # Allow only the ingress controller to reach the app
+                client.V1NetworkPolicyIngressRule(
+                    _from=[
+                        client.V1NetworkPolicyPeer(
+                            namespace_selector=client.V1LabelSelector(
+                                match_labels={"kubernetes.io/metadata.name": "ingress-nginx"}
+                            )
+                        )
+                    ],
+                    ports=[client.V1NetworkPolicyPort(port=APP_PORT, protocol="TCP")]
+                )
+            ]
+        )
+    )
+    try:
+        networking_v1.create_namespaced_network_policy(namespace=namespace, body=netpol)
+        logger.info(f"Created NetworkPolicy for {deployment_name}")
+    except client.exceptions.ApiException as e:
+        logger.error(f"Failed to create NetworkPolicy: {e}")
+        raise e
+
+
 @kopf.on.startup()
 def startup_fn(**kwargs):
     start_metrics_server(port=METRICS_PORT)
@@ -168,6 +203,15 @@ def create_fn(spec, name, namespace, logger, **kwargs):
 
     if not all([pr_number, image, tag]):
         raise kopf.PermanentError("spec must include pr_number, image, and image_tag")
+
+    if not isinstance(pr_number, int) or pr_number <= 0 or pr_number > 999999:
+        raise kopf.PermanentError(f"pr_number must be a positive integer, got: {pr_number}")
+
+    if not re.fullmatch(r'[a-zA-Z0-9._/-]{1,256}', image):
+        raise kopf.PermanentError(f"image contains invalid characters: {image}")
+
+    if not re.fullmatch(r'[a-zA-Z0-9._-]{1,128}', tag):
+        raise kopf.PermanentError(f"image_tag contains invalid characters: {tag}")
 
     pr_namespace = f"preview-pr-{pr_number}"
     deployment_name = f"pr-{pr_number}-app"
@@ -196,6 +240,7 @@ def create_fn(spec, name, namespace, logger, **kwargs):
         create_deployment(deployment_name, image, tag, pr_namespace)
         create_service(service_name, deployment_name, pr_namespace)
         create_ingress(ingress_name, ingress_host, service_name, pr_namespace)
+        create_network_policy(deployment_name, pr_namespace)
 
     ENVIRONMENTS_CREATED.labels(branch_name=branch_name).inc()
     ACTIVE_ENVIRONMENTS.inc()
@@ -268,6 +313,15 @@ def update_fn(spec, name, namespace, logger, **kwargs):
 
     if not all([pr_number, image, tag]):
         raise kopf.PermanentError("spec must include pr_number, image, and image_tag")
+
+    if not isinstance(pr_number, int) or pr_number <= 0 or pr_number > 999999:
+        raise kopf.PermanentError(f"pr_number must be a positive integer, got: {pr_number}")
+
+    if not re.fullmatch(r'[a-zA-Z0-9._/-]{1,256}', image):
+        raise kopf.PermanentError(f"image contains invalid characters: {image}")
+
+    if not re.fullmatch(r'[a-zA-Z0-9._-]{1,128}', tag):
+        raise kopf.PermanentError(f"image_tag contains invalid characters: {tag}")
 
     deployment_name = f"pr-{pr_number}-app"
     pr_namespace = f"preview-pr-{pr_number}"
